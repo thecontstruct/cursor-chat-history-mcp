@@ -90,7 +90,8 @@ server.tool(
     includeAiSummaries: z.boolean().optional().default(true).describe('Include AI-generated conversation summaries'),
     includeQualityScore: z.boolean().optional().default(false).describe('Include quality scores in response'),
     includeRelevanceScore: z.boolean().optional().default(false).describe('Include relevance scores when filtering by projectPath'),
-    outputMode: z.enum(['json', 'compact-json']).optional().default('json').describe('Output format: "json" for formatted JSON (default), "compact-json" for minified JSON')
+    outputMode: z.enum(['json', 'compact-json']).optional().default('json').describe('Output format: "json" for formatted JSON (default), "compact-json" for minified JSON'),
+    agent: z.enum(['cursor', 'claude-code', 'cline', 'windsurf', 'copilot-chat', 'all']).optional().default('all').describe('Filter conversations by agent source. Defaults to "all" (current behavior). Pass a specific value to narrow results to that agent\'s conversations only.')
   },
   async (input) => {
     try {
@@ -157,7 +158,7 @@ server.tool(
           includeEmpty: input.includeEmpty,
           includeAiSummaries: input.includeAiSummaries,
           includeQualityScore: input.includeQualityScore,
-          agent: 'all' as const
+          agent: (input.agent ?? 'all')
         };
 
         const result = await listConversations(mappedInput);
