@@ -184,5 +184,8 @@ export async function runLinkerCli(args: string[]): Promise<void> {
   }
 }
 
-// Run CLI when executed directly
-runLinkerCli(process.argv.slice(2));
+// Run CLI when executed directly (not when imported by server.ts)
+import { pathToFileURL } from 'url';
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runLinkerCli(process.argv.slice(2));
+}
