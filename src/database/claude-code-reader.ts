@@ -229,6 +229,9 @@ export class ClaudeCodeReader implements AgentReader {
       if (!createdAt) createdAt = entry.timestamp;
       updatedAt = entry.timestamp;
 
+      // Skip system events (queue-operation, attachment, last-prompt, ai-title, etc.)
+      if (!entry.message) continue;
+
       // Extract message content
       let content = '';
       if (typeof entry.message.content === 'string') {
