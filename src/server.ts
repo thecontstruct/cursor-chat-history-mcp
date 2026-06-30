@@ -182,10 +182,11 @@ server.tool(
 
 server.tool(
   'get_conversation',
-  'Retrieves the complete content of a specific Cursor conversation including all messages, code blocks, file references, title, and AI summary. WORKFLOW TIP: Use conversation IDs from list_conversations, search_conversations, or analytics breakdowns (files/languages arrays contain conversation IDs). Use summaryOnly=true to get enhanced summary data without full message content when you need to conserve context.',
+  'Retrieves the complete content of a conversation including all messages, code blocks, file references, title, and AI summary. Supports Cursor and Claude Code conversations — agent is inferred from the ID prefix (claude-code: prefix → Claude Code, otherwise Cursor). WORKFLOW TIP: Use conversation IDs from list_conversations, search_conversations, or analytics breakdowns. Use summaryOnly=true to get enhanced summary data without full message content when you need to conserve context. Response includes projectPath for grouping by project.',
   {
-    conversationId: z.string().min(1).describe('Conversation ID from list_conversations, search_conversations, or analytics breakdowns'),
+    conversationId: z.string().min(1).describe('Conversation ID from list_conversations, search_conversations, or analytics breakdowns. Claude Code IDs have a "claude-code:" prefix.'),
     summaryOnly: z.boolean().optional().default(false).describe('Return only enhanced summary data without full message content'),
+    agent: z.enum(['cursor', 'claude-code', 'cline', 'windsurf', 'copilot-chat', 'all']).optional().describe('Override agent source. If omitted, inferred from the conversationId prefix.'),
     outputMode: z.enum(['json', 'compact-json']).optional().default('json').describe('Output format: "json" for formatted JSON (default), "compact-json" for minified JSON')
   },
   async (input) => {

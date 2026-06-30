@@ -247,7 +247,8 @@ export const getConversationSchema = z.object({
   includeFileReferences: z.boolean().optional().default(true),
   includeMetadata: z.boolean().optional().default(false),
   resolveBubbles: z.boolean().optional().default(true),
-  summaryOnly: z.boolean().optional().default(false)
+  summaryOnly: z.boolean().optional().default(false),
+  agent: z.enum(['cursor', 'claude-code', 'cline', 'windsurf', 'copilot-chat', 'all']).optional()
 });
 
 export type GetConversationInput = z.infer<typeof getConversationSchema>;
@@ -258,11 +259,13 @@ export interface GetConversationOutput {
   filePath?: string;
   stats?: ConversationFileStats;
   guidance?: string;
+  projectPath?: string;
   // Summary-only response
   conversation?: {
     composerId: string;
-    format: 'legacy' | 'modern';
+    format: 'legacy' | 'modern' | 'jsonl';
     messageCount: number;
+    projectPath?: string;
     title?: string;
     aiGeneratedSummary?: string;
     messages?: Array<{
@@ -301,6 +304,38 @@ export interface GetConversationOutput {
 export async function getConversation(input: GetConversationInput): Promise<GetConversationOutput> {
   const validatedInput = getConversationSchema.parse(input);
 
+  // Dispatch to the appropriate reader based on explicit agent param or ID prefix
+  const isClaude =
+    validatedInput.agent === 'claude-code' ||
+    (!validatedInput.agent && validatedInput.conversationId.startsWith('claude-code:'));
+
+  if (isClaude) {
+    const ccReader = new ClaudeCodeReader();
+    const conv = await ccReader.getConversation(validatedInput.conversationId);
+    if (!conv) return { conversation: null };
+
+    const messages = validatedInput.summaryOnly
+      ? undefined
+      : conv.messages.map(m => ({
+          type: m.role === 'user' ? 1 : 2,
+          text: m.content,
+          bubbleId: m.id ?? '',
+        }));
+
+    return {
+      conversation: {
+        composerId: conv.conversationId,
+        format: 'jsonl',
+        messageCount: conv.messages.length,
+        title: conv.title,
+        messages,
+        relevantFiles: validatedInput.includeFileReferences ? conv.files : undefined,
+        attachedFolders: validatedInput.includeFileReferences ? (conv.folders ?? []) : undefined,
+        projectPath: conv.projectPath,
+      }
+    };
+  }
+
   const dbPath = process.env.CURSOR_DB_PATH || detectCursorDatabasePath();
   const reader = new CursorDatabaseReader({ dbPath });
 
@@ -315,7 +350,8 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
         includeFirstMessage: true,
         includeLastMessage: true,
         maxFirstMessageLength: 200,
-        maxLastMessageLength: 200
+        maxLastMessageLength: 200,
+        includeAttachedFolders: true,
       });
 
       if (!summary) {
@@ -329,6 +365,7 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
           messageCount: summary.messageCount,
           title: summary.title,
           aiGeneratedSummary: summary.aiGeneratedSummary,
+          projectPath: summary.attachedFolders?.[0] ?? '',
           relevantFiles: validatedInput.includeFileReferences ? summary.relevantFiles : undefined,
           attachedFolders: validatedInput.includeFileReferences ? summary.attachedFolders : undefined,
           metadata: validatedInput.includeMetadata ? {
@@ -351,7 +388,8 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
     const summary = await reader.getConversationSummary(validatedInput.conversationId, {
       includeTitle: true,
       includeAIGeneratedSummary: true,
-      includeFileList: true
+      includeFileList: true,
+      includeAttachedFolders: true,
     });
 
     const format = conversation.hasOwnProperty('_v') ? 'modern' : 'legacy';
@@ -407,6 +445,7 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
     return {
       filePath,
       stats,
+      projectPath: summary?.attachedFolders?.[0] ?? '',
       guidance: `Conversation written to ${filePath}. Use Read tool to view specific sections or Grep to search for patterns. File has ${stats.messageCount} messages, ${stats.codeBlockCount} code blocks, ${stats.totalLines} lines (${stats.fileSize}).`,
     };
 

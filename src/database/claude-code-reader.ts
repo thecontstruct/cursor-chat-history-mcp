@@ -284,10 +284,14 @@ export class ClaudeCodeReader implements AgentReader {
     // Get file stats
     const stat = statSync(filePath);
 
+    // Prefer the actual cwd from message entries — more reliable than the decoded dir name,
+    // which loses information when directory components contain dashes.
+    const cwdFromEntry = messages.find(m => m.metadata?.cwd)?.metadata?.cwd as string | undefined;
+
     return {
       conversationId,
       agent: 'claude-code',
-      projectPath,
+      projectPath: cwdFromEntry ?? projectPath,
       title,
       messages,
       files: Array.from(files),
