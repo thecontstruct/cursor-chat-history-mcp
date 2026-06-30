@@ -4,6 +4,7 @@ import { ClaudeCodeReader } from '../database/claude-code-reader.js';
 import type { BubbleMessage, ConversationFilters } from '../database/types.js';
 import type { AgentName } from '../database/agent-types.js';
 import { detectCursorDatabasePath } from '../utils/database-utils.js';
+import { getCursorProjectPath } from '../utils/cursor-project-path.js';
 import { writeConversationFile, type ConversationFileStats } from '../utils/context-files.js';
 import { calculateQualityScore, type QualityScore } from '../utils/quality.js';
 import {
@@ -365,7 +366,7 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
           messageCount: summary.messageCount,
           title: summary.title,
           aiGeneratedSummary: summary.aiGeneratedSummary,
-          projectPath: summary.attachedFolders?.[0] ?? '',
+          projectPath: summary.attachedFolders?.[0] || getCursorProjectPath(validatedInput.conversationId),
           relevantFiles: validatedInput.includeFileReferences ? summary.relevantFiles : undefined,
           attachedFolders: validatedInput.includeFileReferences ? summary.attachedFolders : undefined,
           metadata: validatedInput.includeMetadata ? {
@@ -445,7 +446,7 @@ export async function getConversation(input: GetConversationInput): Promise<GetC
     return {
       filePath,
       stats,
-      projectPath: summary?.attachedFolders?.[0] ?? '',
+      projectPath: summary?.attachedFolders?.[0] || getCursorProjectPath(validatedInput.conversationId),
       guidance: `Conversation written to ${filePath}. Use Read tool to view specific sections or Grep to search for patterns. File has ${stats.messageCount} messages, ${stats.codeBlockCount} code blocks, ${stats.totalLines} lines (${stats.fileSize}).`,
     };
 
