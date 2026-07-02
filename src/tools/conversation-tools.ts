@@ -92,6 +92,8 @@ export async function listConversations(input: ListConversationsInput): Promise<
     projectPath: validatedInput.projectPath,
     keywords: validatedInput.keywords,
     limit: validatedInput.limit,
+    startDate: validatedInput.startDate,
+    endDate: validatedInput.endDate,
   });
   allConversations.push(...otherAgentsResult.conversations);
   totalFound += otherAgentsResult.totalFound;
@@ -148,8 +150,12 @@ async function listCursorConversations(validatedInput: ListConversationsInput): 
     }
 
     const conversationIds = await reader.getConversationIds(filters);
-    let limitedIds = conversationIds.slice(0, validatedInput.limit);
+    // When date-filtering, scan all fetched IDs — slice happens AFTER the filter
+    let limitedIds = (validatedInput.startDate || validatedInput.endDate)
+      ? conversationIds
+      : conversationIds.slice(0, validatedInput.limit);
 
+    let dateFilteredTotal: number | undefined;
     // Apply date filtering if specified (post-query filtering due to unreliable timestamps)
     if (validatedInput.startDate || validatedInput.endDate) {
       const filteredIds = [];
@@ -171,7 +177,8 @@ async function listCursorConversations(validatedInput: ListConversationsInput): 
           continue;
         }
       }
-      limitedIds = filteredIds;
+      dateFilteredTotal = filteredIds.length;
+      limitedIds = filteredIds.slice(0, validatedInput.limit);
     }
 
     const conversations: ListConversationsOutput['conversations'] = [];
@@ -225,7 +232,7 @@ async function listCursorConversations(validatedInput: ListConversationsInput): 
 
     return {
       conversations,
-      totalFound: conversationIds.length,
+      totalFound: dateFilteredTotal ?? conversationIds.length,
       filters: {
         limit: validatedInput.limit ?? 10,
         minLength: validatedInput.minLength ?? 100,
@@ -1709,28 +1716,28 @@ function checkConversationDateRange(conversation: any, startDate?: string, endDa
   if (!startDate && !endDate) return true;
 
   const start = startDate ? new Date(startDate) : new Date('1970-01-01');
-  const end = endDate ? new Date(endDate) : new Date();
+  // Extend end to cover the entire end day (not just midnight)
+  const end = endDate ? new Date(`${endDate}T23:59:59.999Z`) : new Date();
 
-  // Check if conversation is legacy or modern format
   const isLegacy = conversation.conversation && Array.isArray(conversation.conversation);
 
   if (isLegacy) {
-    // Legacy format: check timestamps in conversation.conversation array
     for (const message of conversation.conversation) {
       if (message.timestamp) {
         const messageDate = new Date(message.timestamp);
-        if (messageDate >= start && messageDate <= end) {
-          return true;
-        }
+        if (messageDate >= start && messageDate <= end) return true;
       }
     }
+    // No message timestamps matched — exclude
+    return false;
   } else {
-    // Modern format: would need to resolve bubble messages to check timestamps
-    // For now, return true to include all modern conversations when date filtering
-    // since resolving all bubble messages would be too expensive
+    // Modern format: use top-level ms timestamps (createdAt / conversationCheckpointLastUpdatedAt)
+    const updatedMs: number | undefined = conversation.conversationCheckpointLastUpdatedAt ?? conversation.createdAt;
+    if (typeof updatedMs === 'number') {
+      const d = new Date(updatedMs);
+      return d >= start && d <= end;
+    }
+    // No timestamp available — include conservatively
     return true;
   }
-
-  // If no valid timestamps found, include the conversation
-  return true;
 }

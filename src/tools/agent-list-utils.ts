@@ -90,6 +90,8 @@ export type AgentListOptions = {
   projectPath?: string;
   keywords?: string[];
   limit?: number;
+  startDate?: string;
+  endDate?: string;
 };
 
 /**
@@ -127,6 +129,15 @@ export function filterByKeywords(
   });
 }
 
+function isConvInDateRange(conv: AgentConversation, startDate?: string, endDate?: string): boolean {
+  if (!startDate && !endDate) return true;
+  // Use updatedAt preferring over createdAt; compare YYYY-MM-DD prefix of ISO string
+  const d = (conv.updatedAt ?? conv.createdAt).substring(0, 10);
+  if (startDate && d < startDate) return false;
+  if (endDate && d > endDate) return false;
+  return true;
+}
+
 /**
  * List conversations from a single AgentReader
  */
@@ -135,6 +146,7 @@ async function listFromReader(
   options: AgentListOptions
 ): Promise<AgentListResult> {
   const conversations: ConversationListItem[] = [];
+  const hasDateFilter = !!(options.startDate || options.endDate);
 
   try {
     if (!await reader.isAvailable()) {
@@ -143,14 +155,22 @@ async function listFromReader(
 
     if (options.projectPath) {
       const convs = await reader.getConversationsByProject(options.projectPath);
-      conversations.push(...convs.map(agentConvToListItem));
+      const filtered = hasDateFilter
+        ? convs.filter(c => isConvInDateRange(c, options.startDate, options.endDate))
+        : convs;
+      conversations.push(...filtered.map(agentConvToListItem));
     } else {
       const convIds = await reader.getConversationIds();
-      for (const convId of convIds.slice(0, options.limit ?? 10)) {
+      // When date-filtering, scan all IDs; slice to limit AFTER the filter
+      const idsToScan = hasDateFilter ? convIds : convIds.slice(0, options.limit ?? 10);
+      for (const convId of idsToScan) {
         const conv = await reader.getConversation(convId);
-        if (conv) {
-          conversations.push(agentConvToListItem(conv));
-        }
+        if (!conv) continue;
+        if (!isConvInDateRange(conv, options.startDate, options.endDate)) continue;
+        conversations.push(agentConvToListItem(conv));
+      }
+      if (hasDateFilter) {
+        conversations.splice(options.limit ?? 10);
       }
     }
   } catch (error) {
