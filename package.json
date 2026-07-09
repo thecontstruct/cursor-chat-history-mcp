@@ -3,6 +3,9 @@
   "version": "0.2.1",
   "description": "MCP server that provides AI assistants access to Cursor chat history for analysis and insights",
   "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "main": "dist/server.js",
   "bin": {
     "cursor-chat-history-mcp": "dist/server.js",
