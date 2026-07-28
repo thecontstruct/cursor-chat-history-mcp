@@ -2,8 +2,9 @@ import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
-// Module-level cache built once per process (~16ms scan over ~900 dirs)
 let _index: Map<string, string> | null = null;
+// IDs that have already triggered a rebuild attempt — prevents hammering FS per-miss
+const _rebuildAttempted = new Set<string>();
 
 /**
  * Decode a Cursor workspace slug to a cwd path.
@@ -69,9 +70,20 @@ function buildIndex(): Map<string, string> {
  * Look up the decoded cwd for a Cursor composer ID by scanning
  * ~/.cursor/projects/<slug>/agent-transcripts/<composerId>.
  * Returns empty string if not found.
- * Result is cached after the first call.
+ *
+ * On a cache miss, triggers one rebuild attempt (new conversation created after
+ * server start). If the ID still isn't present after rebuild, records it so we
+ * don't hammer the FS on subsequent calls for the same unfindable ID.
  */
 export function getCursorProjectPath(composerId: string): string {
   if (!_index) _index = buildIndex();
-  return _index.get(composerId) ?? '';
+  let hit = _index.get(composerId);
+  if (!hit && !_rebuildAttempted.has(composerId)) {
+    _rebuildAttempted.add(composerId);
+    const fresh = buildIndex();
+    // Only swap if the index grew — indicates actual filesystem change
+    if (fresh.size > _index.size) _index = fresh;
+    hit = _index.get(composerId);
+  }
+  return hit ?? '';
 }
