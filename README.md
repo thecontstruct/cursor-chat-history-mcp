@@ -206,3 +206,7 @@ yarn build
 ## License
 
 MIT
+
+## Optional fast search index
+
+If a SQLite FTS5 (trigram) index exists at `~/.cursor-chat-history-index/index.db` (override with `CURSOR_CHAT_INDEX_PATH`), `search_conversations` queries it read-only for plain `query`/`keywords` searches and returns message-level `matches`. Searches with `likePattern`, dates, a non-default `searchType`/`format`, or terms shorter than 3 characters use the original scan. Set `CURSOR_CHAT_FTS=0` to disable. The index is built outside this server (see the `cursor-chat-history-cli` project).

@@ -1,3 +1,4 @@
+import { searchFtsIndex } from '../database/fts-index.js';
 import { z } from 'zod';
 import { CursorDatabaseReader } from '../database/reader.js';
 import { ClaudeCodeReader } from '../database/claude-code-reader.js';
@@ -553,6 +554,8 @@ export interface SearchConversationsOutput {
     aiGeneratedSummary?: string;
     size: number;
     relevanceScore?: number;
+    /** Message-level hits when served from the FTS index. */
+    matches?: Array<{ key: string; kind: string; snippet: string }>;
     matchDetails?: {
       exactPathMatch: boolean;
       partialPathMatch: boolean;
@@ -798,6 +801,66 @@ export async function searchConversations(input: SearchConversationsInput): Prom
             highlightMatches: validatedInput.highlightMatches
           }
         };
+      }
+
+      // Fast path: local FTS index (read-only). Only for plain text queries; anything else uses the scan below.
+      const ftsEligible =
+        !validatedInput.likePattern &&
+        !validatedInput.startDate &&
+        !validatedInput.endDate &&
+        validatedInput.searchType === 'all' &&
+        validatedInput.format === 'both';
+      if (ftsEligible) {
+        const ftsHits = searchFtsIndex({
+          query: validatedInput.query,
+          keywords: validatedInput.keywords,
+          keywordOperator: validatedInput.keywordOperator,
+          limit: validatedInput.maxResults
+        });
+        if (ftsHits) {
+          const ftsConversations = [];
+          for (const hit of ftsHits) {
+            try {
+              const summary = await reader.getConversationSummary(hit.composerId, {
+                includeFirstMessage: true,
+                maxFirstMessageLength: 150,
+                includeTitle: true,
+                includeAIGeneratedSummary: true
+              });
+              if (summary) {
+                ftsConversations.push({
+                  composerId: summary.composerId,
+                  format: summary.format,
+                  messageCount: summary.messageCount,
+                  hasCodeBlocks: summary.hasCodeBlocks,
+                  relevantFiles: summary.relevantFiles || [],
+                  attachedFolders: summary.attachedFolders || [],
+                  firstMessage: summary.firstMessage,
+                  title: summary.title,
+                  aiGeneratedSummary: summary.aiGeneratedSummary,
+                  size: summary.conversationSize,
+                  matches: hit.matches
+                });
+              }
+            } catch (error) {
+              console.error(`Failed to get summary for conversation ${hit.composerId}:`, error);
+            }
+          }
+          return {
+            conversations: ftsConversations,
+            totalResults: ftsConversations.length,
+            query: displayQuery,
+            searchOptions: {
+              includeCode: validatedInput.includeCode,
+              contextLines: validatedInput.contextLines,
+              maxResults: validatedInput.maxResults,
+              searchBubbles: validatedInput.searchBubbles,
+              searchType: validatedInput.searchType,
+              format: validatedInput.format,
+              highlightMatches: validatedInput.highlightMatches
+            }
+          };
+        }
       }
 
       // Handle enhanced search with keywords, LIKE patterns, or simple query
